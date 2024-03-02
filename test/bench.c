@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <api.h>
+#include <quaternion.h>
 
 
 #if defined(TARGET_OS_UNIX) && (defined(TARGET_ARM) || defined(TARGET_ARM64) || defined(TARGET_OTHER))
@@ -93,13 +94,28 @@ static int bench_sig(int runs, int csv) {
         printf("Benchmarking %s\n", CRYPTO_ALGNAME);
     }
 
+    quat_alg_elem_t final_beta;
+    ibz_t final_n_beta;
+    ibz_mat_2x2_t final_action_matrix;
+    quat_alg_elem_t final_gen;
+    ibz_t final_n;
     BENCH_CODE_1(runs);
+    #ifndef PRECOMPUTED
     sqisign_keypair(pk, sk);
     BENCH_CODE_2("sqisign_keypair", csv);
+    #else
+    sqisign_keypair_modified(pk, sk, &final_beta, &final_n_beta, &final_action_matrix, &final_gen, &final_n);
+    BENCH_CODE_2("sqisign_keypair_modified", csv);
+    #endif
 
     BENCH_CODE_1(runs);
+    #ifndef PRECOMPUTED
     sqisign_sign(sig, &len, m, m_len, sk);
     BENCH_CODE_2("sqisign_sign", csv);
+    #else
+    sqisign_sign_modified(sig, &len, m, m_len, sk, &final_beta, &final_n_beta, &final_action_matrix, &final_gen, &final_n);
+    BENCH_CODE_2("sqisign_sign_modified", csv);
+    #endif
 
     len = 32;
     BENCH_CODE_1(runs);

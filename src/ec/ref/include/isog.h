@@ -71,6 +71,13 @@ static inline void xisog(ec_point_t* B, uint64_t const i, ec_point_t const A)
 		xisog_s(B, i, A);
 }
 
+void xisog_recoverA24(ec_point_t* A, ec_point_t* P, ec_point_t* Q, ec_point_t* PQ);
+
+static inline void xisog_improved(ec_point_t* A, ec_point_t* points)
+{
+	xisog_recoverA24(A, &points[0], &points[1], &points[2]);
+}
+
 static inline void xeval(ec_point_t* Q, uint64_t const i, ec_point_t const P, ec_point_t const A)
 {
 	// Next branch only depends on a fixed public bound (named gap)

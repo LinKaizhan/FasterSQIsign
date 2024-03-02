@@ -13,16 +13,13 @@ option(ENABLE_TESTS  "Enable compilation of tests." ON)
 option(ENABLE_CT_TESTING  "Enable compilation for constant time testing." OFF)
 option(ENABLE_GMP_BUILD "Download and build external version of GMP" OFF)
 option(ENABLE_DOC_TARGET "Enable building API documentation using doxygen" OFF)
+option(PRECOMPUTED "Build with precomputed table" OFF)
 
 if (NOT DEFINED SQISIGN_BUILD_TYPE)
 	SET(SQISIGN_BUILD_TYPE "ref")
 endif()
 
-if(SQISIGN_BUILD_TYPE STREQUAL "broadwell")
-	SET(SVARIANT_S "lvl1")
-else()
-	SET(SVARIANT_S "lvl1;lvl3;lvl5")
-endif()
+SET(SVARIANT_S "lvl1")
 
 include(.cmake/flags.cmake)
 include(.cmake/sanitizers.cmake)

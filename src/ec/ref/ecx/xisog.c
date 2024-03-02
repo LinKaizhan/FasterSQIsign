@@ -293,3 +293,38 @@ void xisog_s(ec_point_t* B, uint64_t const i, ec_point_t const A)
 	fp2_copy(&(B->x), &t24);
 	fp2_copy(&(B->z), &t24m);
 }
+
+void xisog_recoverA24(ec_point_t* A24, ec_point_t* P, ec_point_t* Q, ec_point_t* PQ)
+{
+	fp2_t x12, x123, z12, z123, xz12, xz23, xz31, xz123, xz213, xz312, tmp1, tmp2;
+	fp2_mul(&x12, &P->x, &Q->x);
+	fp2_mul(&x123, &PQ->x, &x12);
+	fp2_mul(&xz12, &P->x, &Q->z);
+	fp2_mul(&xz23, &Q->x, &PQ->z);
+	fp2_mul(&xz31, &PQ->x, &P->z);
+	fp2_mul(&xz123, &xz12, &PQ->z);
+	fp2_mul(&xz213, &xz23, &P->z);
+	fp2_mul(&xz312, &xz31, &Q->z);
+	fp2_sub(&tmp1, &P->x, &P->z);
+	fp2_sub(&tmp2, &Q->x, &Q->z);
+	fp2_mul(&tmp1, &tmp2, &tmp1);
+	fp2_sub(&tmp2, &PQ->x, &PQ->z);
+	fp2_mul(&A24->x, &tmp1, &tmp2);
+	fp2_add(&tmp1, &xz123, &xz213);
+	fp2_add(&tmp1, &tmp1, &xz312);
+	fp2_sub(&A24->x, &A24->x, &x123);
+	fp2_sub(&A24->x, &A24->x, &tmp1);
+	fp2_mul(&z12, &P->z, &Q->z);
+	fp2_mul(&z123, &PQ->z, &z12);
+	fp2_add(&x123, &x123, &x123);
+	fp2_add(&x123, &x123, &x123);
+	fp2_mul(&A24->z, &x123, &z123);
+	fp2_mul(&tmp1, &tmp1, &x123);
+	fp2_add(&z123, &z123, &z123);
+	fp2_add(&A24->x, &A24->x, &z123);
+	fp2_sqr(&A24->x, &A24->x);
+	fp2_sub(&A24->x, &A24->x, &tmp1);
+	fp2_add(&A24->z, &A24->z, &A24->z);
+	fp2_add(&A24->x, &A24->x, &A24->z);
+	fp2_add(&A24->z, &A24->z, &A24->z);
+}

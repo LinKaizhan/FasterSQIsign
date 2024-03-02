@@ -291,6 +291,18 @@ void ec_curve_to_basis_2(ec_basis_t *PQ2, const ec_curve_t *curve);
  */
 void ec_complete_basis_2(ec_basis_t* PQ2, const ec_curve_t* curve, const ec_point_t* P);
 
+
+/**
+ * @brief Complete a basis of the 2^f-torsion
+ *
+ * The algorithm is deterministic
+ *
+ * @param PQ2 a basis of the 2^f-torsion containing P as first generator (improved version)
+ * @param curve the curve
+ * @param P a point of order 2^f
+ */
+void ec_complete_basis_2_improved(ec_basis_t* PQ2, const ec_curve_t* curve, const ec_point_t* P);
+
 /**
  * @brief Generate a 3^e-torsion basis
  *
@@ -312,6 +324,7 @@ void ec_curve_to_basis_3(ec_basis_t* PQ3, const ec_curve_t* curve);
 void ec_curve_to_basis_6(ec_basis_t* PQ6, const ec_curve_t* curve);
 
 
+
 /**
  * @brief Compute the generalized dlog of R wrt the 2^f-basis PQ2
  *
@@ -323,6 +336,19 @@ void ec_curve_to_basis_6(ec_basis_t* PQ6, const ec_curve_t* curve);
  * @param R a point of order dividing 2^f
  */
 void ec_dlog_2(digit_t* scalarP, digit_t* scalarQ,
+    const ec_basis_t* PQ2, const ec_point_t* R, const ec_curve_t* curve);
+
+/**
+ * @brief Compute the generalized dlog of R wrt the 2^f-basis PQ2 (improved version)
+ *
+ * Ensure that R = scalarP * P + scalarQ * Q
+ *
+ * @param scalarP the computed dlog
+ * @param scalarQ the computed dlog
+ * @param PQ2 a 2^f-torsion basis
+ * @param R a point of order dividing 2^f
+ */
+void ec_dlog_2_improved(digit_t* scalarP, digit_t* scalarQ,
     const ec_basis_t* PQ2, const ec_point_t* R, const ec_curve_t* curve);
 
 /**
@@ -390,6 +416,19 @@ static inline void ec_eval_even_basis(ec_curve_t* image, const ec_isog_even_t* p
 void ec_eval_odd(ec_curve_t* image, const ec_isog_odd_t* phi,
     ec_point_t* points, unsigned short length);
 
+
+/**
+ * @brief Evaluate isogeny of odd degree on list of points (improved version)
+ *
+ * @param image computed image curve
+ * @param phi isogeny
+ * @param points a list of points to evaluate the isogeny on, modified in place
+ * @param length of the list points
+ */
+void ec_eval_odd_improved(ec_curve_t* image, const ec_isog_odd_t* phi,
+    ec_point_t* points, unsigned short length);
+
+
 /**
  * @brief Evaluate isogeny of odd degree on list of torsion bases
  *
@@ -400,7 +439,7 @@ void ec_eval_odd(ec_curve_t* image, const ec_isog_odd_t* phi,
  */
 static inline void ec_eval_odd_basis(ec_curve_t* image, const ec_isog_odd_t* phi,
     ec_basis_t* points, unsigned short length) {
-    ec_eval_odd(image, phi, (ec_point_t*)points, sizeof(ec_basis_t) / sizeof(ec_point_t) * length);
+    ec_eval_odd_improved(image, phi, (ec_point_t*)points, sizeof(ec_basis_t) / sizeof(ec_point_t) * length);
 }
 
 /** @}

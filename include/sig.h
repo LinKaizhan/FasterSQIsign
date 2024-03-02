@@ -4,6 +4,7 @@
 #define SQISIGN_H
 
 #include <stdint.h>
+#include <quaternion.h>
 
 /**
  * SQIsign keypair generation.
@@ -16,6 +17,20 @@
  * @return int status code
  */
 int sqisign_keypair(unsigned char *pk, unsigned char *sk);
+
+/**
+ * SQIsign keypair generation.
+ *
+ * The implementation corresponds to SQIsign.CompactKeyGen() in the SQIsign spec.
+ * The caller is responsible to allocate sufficient memory to hold pk and sk.
+ *
+ * @param[out] pk SQIsign public key
+ * @param[out] sk SQIsign secret key
+ * @param[out] final_beta an endomorphism of the image curve
+ * @param[out] final_action_matrix the action matrix of final_beta
+ * @return int status code
+ */
+int sqisign_keypair_modified(unsigned char *pk, unsigned char *sk, quat_alg_elem_t *final_beta, ibz_t *final_n_beta, ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, ibz_t *final_n);
 
 /**
  * SQIsign signature generation.
@@ -35,6 +50,12 @@ int sqisign_sign(unsigned char *sm,
               unsigned long long *smlen, const unsigned char *m,
               unsigned long long mlen, const unsigned char *sk);
 
+int sqisign_sign_modified(unsigned char *sm,
+              unsigned long long *smlen, const unsigned char *m,
+              unsigned long long mlen, const unsigned char *sk,
+              quat_alg_elem_t *final_beta, ibz_t *final_n_beta, 
+              ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, 
+              ibz_t *final_n);
 /**
  * SQIsign open signature.
  *

@@ -757,3 +757,254 @@ int protocols_sign(signature_t *sig,const public_key_t *pk, const secret_key_t *
     return found;
 }
 
+
+int protocols_sign_modified(signature_t *sig, const public_key_t *pk, const secret_key_t *sk, const unsigned char* m, size_t l, quat_alg_elem_t *final_beta, ibz_t *final_n_beta, ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, ibz_t *final_n) {
+
+    // var dec
+    quat_order_t right_order_key;
+    quat_left_ideal_t ideal_commit,ideal_challenge;
+    quat_alg_elem_t gen,gen_small,gen_answer,delta;
+    ibq_t ibq_norm;
+    ibz_t norm,temp,remainder;
+    ibz_mat_4x4_t reduced,gram;
+    quat_alg_coord_t coeffs;
+
+    quat_left_ideal_t ideal_comchall,ideal_seccomchall;
+    quat_left_ideal_t ideal_eichler_rand;
+    quat_left_ideal_t ideal_pullback,ideal_input_klpt;
+    quat_alg_elem_t gen_challenge;
+
+    
+    // var init
+    ibq_init(&ibq_norm);
+    ibz_init(&norm);ibz_init(&temp);
+    ibz_init(&remainder);
+    quat_order_init(&right_order_key);
+    quat_left_ideal_init(&ideal_commit);
+    quat_left_ideal_init(&ideal_challenge);
+    quat_alg_elem_init(&gen);
+    quat_alg_elem_init(&gen_small);
+    quat_alg_elem_init(&delta);
+    ibz_mat_4x4_init(&reduced);
+    ibz_mat_4x4_init(&gram);
+    quat_alg_coord_init(&coeffs);
+    quat_left_ideal_init(&ideal_comchall);
+    quat_left_ideal_init(&ideal_seccomchall);
+    quat_left_ideal_init(&ideal_eichler_rand);
+    quat_left_ideal_init(&ideal_pullback);
+    quat_left_ideal_init(&ideal_input_klpt);
+    quat_alg_elem_init(&gen_challenge);
+
+
+    ec_curve_t curve = sk->curve;
+    ec_basis_t basis_plus = sk->basis_plus;
+    ec_basis_t basis_minus = sk->basis_minus;
+    ec_point_t kernel_dual = sk->kernel_dual;
+
+    // Commitment (computes ideal_commit and pushes the 2*3*-torsion basis)
+    ec_curve_t E1;
+    ec_basis_t E1basis = BASIS_CHALLENGE;
+    {
+        protocols_commit(&ideal_commit, &E1, &E1basis);
+
+        assert(!fp2_is_zero(&E1.C));
+        assert(!fp2_is_zero(&E1basis.P.z) && !fp2_is_zero(&E1basis.Q.z) && !fp2_is_zero(&E1basis.PmQ.z));
+    }
+  
+
+    // Challenge (computes ideal_challenge and sig->r, sig->s)
+    ec_curve_t E2_for_testing;  //XXX
+    {
+        ibz_vec_2_t vec;
+        ibz_vec_2_init(&vec);
+
+        hash_to_challenge(&vec, &E1, m, l);
+
+        protocols_challenge(&ideal_challenge, sig, &E1, &E1basis, &vec, &E2_for_testing);
+
+        ibz_vec_2_finalize(&vec);
+    }
+    assert(ibz_get(&ideal_commit.norm)%2!=0);
+        
+    // ideal_comchall is the intersectin of ideal_commit and ideal_challenge
+    quat_lideal_inter(&ideal_comchall,&ideal_challenge,&ideal_commit,&QUATALG_PINFTY);
+
+    #ifndef NDEBUG 
+        // debug the norm
+        ibz_mul(&temp,&ideal_commit.norm,&ideal_challenge.norm);
+        assert(0==ibz_cmp(&temp,&ideal_comchall.norm));
+    #endif
+
+    int lideal_generator_ok = quat_lideal_generator(&gen,&ideal_comchall,&QUATALG_PINFTY,0);
+    assert(lideal_generator_ok);
+    // computing the generator of ideal seccomchall as gen = sk.gen_two * gen
+    quat_alg_elem_copy(&gen_challenge,&gen);
+    quat_alg_norm(&ibq_norm,&gen_challenge,&QUATALG_PINFTY);
+    ibq_to_ibz(&norm,&ibq_norm);
+
+    // computing a good norm element for sk.lideal_small
+    lideal_generator_ok = quat_lideal_generator_coprime(&gen_small,&sk->lideal_small,&norm,&QUATALG_PINFTY,0);
+    assert(lideal_generator_ok);
+    quat_alg_conj(&gen_small,&gen_small);
+    quat_alg_normalize(&gen_small);
+
+    // gen = gen_small * gen_challenge
+    quat_alg_mul(&gen,&gen_small,&gen_challenge,&QUATALG_PINFTY);
+    ibz_mul(&temp,&ideal_comchall.norm,&sk->lideal_small.norm);
+    quat_alg_normalize(&gen);
+
+    // computing of the right order of lideal_small
+    quat_lideal_right_order(&right_order_key,&sk->lideal_small,&QUATALG_PINFTY);
+    assert(quat_lattice_contains(&coeffs,&right_order_key,&gen,&QUATALG_PINFTY));
+
+    // creation of ideal_seccomchall
+    quat_lideal_make_primitive_then_create(&ideal_seccomchall,&gen,&temp,&right_order_key,&QUATALG_PINFTY);
+
+    // copying a generator for later
+    quat_alg_elem_copy(&gen_challenge,&gen);
+
+
+    #ifndef NDEBUG 
+        // debug the norm
+        ibz_mul(&temp,&ideal_comchall.norm,&sk->lideal_small.norm);
+        assert(0==ibz_cmp(&temp,&ideal_seccomchall.norm));
+    #endif
+
+    int found = 0;
+
+    for (unsigned attempt = 0; !found && attempt < SQISIGN_response_attempts; ++attempt) { 
+        // TODUPDATE add a random ideal of norm 2^SQISIGN_random_length (right now SQISIGN_random_length )
+
+        // now we are computing a small ideal equivalent to ideal_seccomchall 
+        //TODUPDATE replace with another randomization to ensure a good distribution in the eichler order class set   
+        quat_lideal_reduce_basis(&reduced,&gram,&ideal_seccomchall,&QUATALG_PINFTY);
+        found = klpt_lideal_equiv(&gen,&temp,&reduced,&gram,&ideal_seccomchall.norm,&ideal_seccomchall.lattice.denom,&QUATALG_PINFTY);
+        if (!found) {
+            continue;
+        }
+        // quat_alg_elem_copy(&gen_challenge,&gen);
+        quat_alg_conj(&gen_challenge,&gen);
+
+        // computing ideal_eichler_rand = right_order_key < gen, temp >
+        quat_lideal_create_from_primitive(&ideal_eichler_rand,&gen,&temp,&right_order_key,&QUATALG_PINFTY);
+
+        assert(quat_lideal_isom(&delta,&ideal_eichler_rand,&ideal_seccomchall,&QUATALG_PINFTY));
+
+        // computing the pullback through sk->lideal_small 
+        quat_alg_mul(&gen,&gen_small,&gen,&QUATALG_PINFTY);
+        quat_alg_normalize(&gen);   
+        quat_lideal_create_from_primitive(&ideal_pullback,&gen,&ideal_eichler_rand.norm,&MAXORD_O0,&QUATALG_PINFTY);
+
+        // computing the final input ideal as equivalent to ideal_pullback
+        quat_lideal_reduce_basis(&reduced,&gram,&ideal_pullback,&QUATALG_PINFTY);
+        found = found && klpt_lideal_equiv(&gen,&temp,&reduced,&gram,&ideal_pullback.norm,&ideal_pullback.lattice.denom,&QUATALG_PINFTY);
+        // ruling out failure, or extreme values of gen
+        if (!found || 0==ibz_cmp(&gen.coord[0],&ibz_const_zero) || 0==ibz_cmp(&gen.coord[1],&ibz_const_zero)) {
+            found = 0;
+            continue;
+            
+        }
+
+        // creating this ideal
+        quat_lideal_create_from_primitive(&ideal_input_klpt,&gen,&temp,&MAXORD_O0,&QUATALG_PINFTY);
+        assert(quat_lideal_isom(&delta,&ideal_input_klpt,&ideal_pullback,&QUATALG_PINFTY));
+
+        // applying klpt 
+        quat_alg_conj(&delta,&gen);
+        #ifndef NDEBUG 
+            assert(quat_lattice_contains(&coeffs,&ideal_pullback.lattice,&delta,&QUATALG_PINFTY));
+        #endif 
+    
+
+        // applying signing klpt
+        found = klpt_signing_klpt(&gen,&ideal_input_klpt,&sk->lideal_small,&delta,&QUATALG_PINFTY);
+        if (!found) {
+            continue;
+
+        }
+        assert(quat_lattice_contains(&coeffs,&ideal_input_klpt.lattice,&gen,&QUATALG_PINFTY));
+
+        // gen = gen *delta /norm(ideal_input_klpt)
+        quat_alg_mul(&gen,&gen,&delta,&QUATALG_PINFTY);
+        ibz_mul(&gen.denom,&gen.denom,&ideal_input_klpt.norm);
+        quat_alg_normalize(&gen);
+
+        // for debug we check that gen is contained in the right order and ideal
+        assert(quat_lattice_contains(&coeffs,&ideal_pullback.lattice,&gen,&QUATALG_PINFTY));
+        assert(quat_lattice_contains(&coeffs,&right_order_key,&gen,&QUATALG_PINFTY));
+    
+        // gen = conjugate(gen) 
+        // gen should be the generator of the ideal to be translated
+        quat_alg_conj(&gen,&gen); 
+
+
+        #ifndef NDEBUG 
+            quat_left_ideal_t ideal_signing_test;
+            quat_left_ideal_init(&ideal_signing_test);
+            ibz_pow(&temp,&ibz_const_two,KLPT_signing_klpt_length);
+            quat_lideal_create_from_primitive(&ideal_signing_test,&gen,&temp,&right_order_key,&QUATALG_PINFTY);
+            assert(quat_lideal_isom(&delta,&ideal_signing_test,&ideal_seccomchall,&QUATALG_PINFTY));
+            assert(quat_lideal_isom(&delta,&ideal_eichler_rand,&ideal_seccomchall,&QUATALG_PINFTY));
+            assert(quat_lideal_isom(&delta,&ideal_eichler_rand,&ideal_seccomchall,&QUATALG_PINFTY));
+            assert(0==ibz_cmp(&temp,&ideal_signing_test.norm));
+            quat_alg_conj(&delta,&gen);
+            quat_lideal_create_from_primitive(&ideal_signing_test,&delta,&ideal_eichler_rand.norm,&right_order_key,&QUATALG_PINFTY);
+            assert(quat_lideal_equals(&ideal_signing_test,&ideal_eichler_rand,&QUATALG_PINFTY));
+        #endif
+        
+        // checking cyclicity
+        quat_alg_conj(&delta,&gen);
+        assert(quat_lattice_contains(&coeffs,&ideal_eichler_rand.lattice,&delta,&QUATALG_PINFTY));
+        // quat_alg_elem_copy(&delta,&gen);
+        quat_alg_mul(&delta,&delta,&gen_challenge,&QUATALG_PINFTY);
+        ibz_mul(&delta.denom,&delta.denom,&ideal_eichler_rand.norm);
+        quat_alg_normalize(&delta);
+        assert(quat_lattice_contains(&coeffs,&right_order_key,&delta,&QUATALG_PINFTY));
+        found = found && quat_alg_is_primitive(&delta,&right_order_key,&QUATALG_PINFTY);
+        if (!found) { 
+            continue;
+        }
+
+        assert(SQISIGN_signing_length == KLPT_signing_klpt_length/TORSION_PLUS_EVEN_POWER);
+
+        found = found && id2iso_ideal_to_isogeny_two_long_power_of_2_modified_sign(&sig->zip,&curve,&basis_minus,&basis_plus,&kernel_dual,&gen,SQISIGN_signing_length,&sk->lideal_small,&sk->lideal_two,&sk->gen_two,&QUATALG_PINFTY, final_beta, final_n_beta, final_action_matrix, final_gen, final_n);
+    }
+
+    // if (!found)
+    //     return found;
+
+    // quick check to see if we got the correct curve in the end
+#ifndef NDEBUG
+    if (found) {
+        fp2_t jchall, jresp;
+        ec_j_inv(&jchall, &E2_for_testing);
+        ec_j_inv(&jresp, &curve);
+        assert(fp2_is_equal(&jchall, &jresp));
+    } else {
+        printf("signature failed \n");
+    }
+#endif
+
+    // var finalize 
+    ibq_finalize(&ibq_norm);
+    ibz_finalize(&norm);ibz_finalize(&temp);
+    ibz_finalize(&remainder);
+    quat_order_finalize(&right_order_key);
+    quat_left_ideal_finalize(&ideal_commit);
+    quat_left_ideal_finalize(&ideal_challenge);
+    quat_alg_elem_finalize(&gen);
+    quat_alg_elem_finalize(&gen_small);
+    quat_alg_elem_finalize(&delta);
+    ibz_mat_4x4_finalize(&reduced);
+    ibz_mat_4x4_finalize(&gram);
+    quat_alg_coord_finalize(&coeffs);
+    quat_left_ideal_finalize(&ideal_comchall);
+    quat_left_ideal_finalize(&ideal_seccomchall);
+    quat_left_ideal_finalize(&ideal_eichler_rand);
+    quat_left_ideal_finalize(&ideal_pullback);
+    quat_left_ideal_finalize(&ideal_input_klpt);
+    quat_alg_elem_finalize(&gen_challenge);
+
+    return found;
+}
+

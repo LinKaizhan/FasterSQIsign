@@ -31,6 +31,26 @@ void fp_tomont(digit_t* out, const digit_t* a);
 void fp_frommont(digit_t* out, const digit_t* a);
 void fp_mont_setone(digit_t* out);
 
+extern const fp_t fp_1;
+extern const fp_t fp_2;
+extern const fp_t fp_inv2;
+extern const fp_t fp_inv3;
+extern const int p_even_cofactor_minus_1_limb;
+extern const uint64_t p_even_cofactor_minus_1[];
+extern const uint64_t p_even_cofactor_minus_1_highest;
+extern const int strategy[];
+extern const fp_t Lookupbasere;
+extern const fp_t Lookupbaseim;
+extern const fp_t Lookuptable[];
+extern const fp_t LookuptableLR[];
+
+typedef __uint128_t int_two_torsion;
+void int2t_add(int_two_torsion* out, const int_two_torsion a, const int_two_torsion b);
+void int2t_sub(int_two_torsion* out, const int_two_torsion a, const int_two_torsion b);
+void int2t_neg(int_two_torsion* out, const int_two_torsion a);
+void int2t_mul(int_two_torsion* out, const int_two_torsion a, const int_two_torsion b);
+void int2t_inv(int_two_torsion* out, const int_two_torsion a);
+void int2t_toarray(digit_t* out, const int_two_torsion a);
 /********************** Constant-time unsigned comparisons ***********************/
 
 // The following functions return 1 (TRUE) if condition is true, 0 (FALSE) otherwise

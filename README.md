@@ -1,3 +1,19 @@
+# A Faster Software Implementation of SQIsign
+## This code is an attachment of the manuscript "A Faster Software Implementation of SQIsign", utilizing several techniques to optimize the implementation of SQIsign.
+
+The code is based on the [code](https://github.com/SQISign/the-sqisign) proposed by Luca De Feo et al. For more details of their implementation see the following original readme.
+
+We only complie and benchmark the code in the case that level=lvl1.
+
+The default compilation option does not adapt the precomputation technique as we proposed in Section 4.3 of our manuscript. This technique may enlarge the cost of key generation, but reduces the signing cost.
+To compile the code with the precomputation technique use CMake build option
+```
+-DPRECOMPUTED=ON
+```
+
+**The following is the original readme.**
+
+
 # SQIsign
 
 This library is a C implementation of SQIsign, short for Short Quaternion and Isogeny Signature (from isogeny graphs of supersingular elliptic curves).

@@ -1004,6 +1004,643 @@ void ec_dlog_2(digit_t* scalarP, digit_t* scalarQ, const ec_basis_t* PQ2, const 
     }
 }
 
+// point doublings using Modified Jacobian coordinates
+void DBL_MJ(jac_point_t *Q, fp2_t *T, fp2_t *lam, const jac_point_t *P)
+{
+    fp2_t t1, t2, t3, t4, t5;
+    fp2_sqr(&t1, &P->x);      // t1 = xx^2;
+    fp2_sqr(&t2, &P->y);
+    fp2_add(&t2, &t2, &t2);   // t2 = 2*yy^2;
+    fp2_sqr(&t3, &t2);        // t3 = t2^2;
+    fp2_add(&t4, &t3, &t3);   // t4 = 2 * t3;
+    fp2_add(&t5, &t2, &P->x);
+    fp2_sqr(&t5, &t5);
+    fp2_sub(&t5, &t5, &t1);
+    fp2_sub(&t5, &t5, &t3);   // t5 = (xx+t2)^2-t1-t3;
+    fp2_add(lam, &t1, &t1);
+    fp2_add(lam, lam, &t1);
+    fp2_add(lam, lam, T);     // tmp = 3*t1+tt;
+    fp2_sqr(&Q->x, lam);
+    fp2_sub(&Q->x,&Q->x, &t5);
+    fp2_sub(&Q->x, &Q->x, &t5);// x3 = tmp^2-2*t5;
+    fp2_sub(&Q->y, &t5, &Q->x);
+    fp2_mul(&Q->y, &Q->y, lam);
+    fp2_sub(&Q->y, &Q->y, &t4);// y3 = tmp*(t5-x3)-t4;
+    fp2_mul(&Q->z, &P->z, &P->y);
+    fp2_add(&Q->z, &Q->z, &Q->z);// z3 = 2*yy*zz;
+    fp2_mul(&t3, T, &t4);
+    fp2_add(T, &t3, &t3);     // t3 = 2*t4*tt;
+}
+
+// Miller loop
+void line_fun(fp2_t *f, const jac_point_t *P, const jac_point_t *Q, fp2_t *lam1, fp2_t *lam2)
+{
+    fp2_t t1, t2, t3, t4, t5, t6, t7;
+    fp2_sqr(&t1, &P->z);
+    fp2_mul(&t2, &t1, &P->z);
+    fp2_mul(&t3, &t2, lam2);
+    fp2_mul(&t4, &t2, &P->y);
+    fp2_sqr(f, f);
+    fp2_mul(&t5, &t1, &Q->x);
+    fp2_sub(&t5, &t5, &P->x);
+    fp2_mul(&t6, &t5, lam1);
+    fp2_mul(&t7, &t2, &Q->y);
+    fp2_add(&t7, &t7, &P->y);
+    fp2_sub(&t6, &t6, &t7);
+    fp2_mul(f, f, &t6);
+    fp2_sqr(f, f);
+    fp2_mul(f, f, &P->y);
+    fp2_add(f, f, f);
+    fp2_mul(&t5, &t5, &t3);
+    fp2_mul(&t6, &t4, &t7);
+    fp2_add(&t6, &t6, &t6);
+    fp2_add(&t5, &t5, &t6);
+    fp_neg(t5.im, t5.im);
+    fp2_mul(f, f, &t5);
+}
+
+// Miller loop (shared the first argument)
+void line_fun_share(fp2_t *f1, fp2_t *f2, const jac_point_t *P, const jac_point_t *Q1, const jac_point_t *Q2, fp2_t *lam1, fp2_t *lam2)
+{
+    fp2_t t1, t2, t3, t4, t5, t6, t7;
+    fp2_sqr(&t1, &P->z);
+    fp2_mul(&t2, &t1, &P->z);
+    fp2_mul(&t3, &t2, lam2);
+    fp2_mul(&t4, &t2, &P->y);
+    fp2_sqr(f1, f1);
+    fp2_mul(&t5, &t1, &Q1->x);
+    fp2_sub(&t5, &t5, &P->x);
+    fp2_mul(&t6, &t5, lam1);
+    fp2_mul(&t7, &t2, &Q1->y);
+    fp2_add(&t7, &t7, &P->y);
+    fp2_sub(&t6, &t6, &t7);
+    fp2_mul(f1, f1, &t6);
+    fp2_sqr(f1, f1);
+    fp2_mul(f1, f1, &P->y);
+    fp2_add(f1, f1, f1);
+    fp2_mul(&t5, &t5, &t3);
+    fp2_mul(&t6, &t4, &t7);
+    fp2_add(&t6, &t6, &t6);
+    fp2_add(&t5, &t5, &t6);
+    fp_neg(t5.im, t5.im);
+    fp2_mul(f1, f1, &t5);
+    fp2_sqr(f2, f2);
+    fp2_mul(&t5, &t1, &Q2->x);
+    fp2_sub(&t5, &t5, &P->x);
+    fp2_mul(&t6, &t5, lam1);
+    fp2_mul(&t7, &t2, &Q2->y);
+    fp2_add(&t7, &t7, &P->y);
+    fp2_sub(&t6, &t6, &t7);
+    fp2_mul(f2, f2, &t6);
+    fp2_sqr(f2, f2);
+    fp2_mul(f2, f2, &P->y);
+    fp2_add(f2, f2, f2);
+    fp2_mul(&t5, &t5, &t3);
+    fp2_mul(&t6, &t4, &t7);
+    fp2_add(&t6, &t6, &t6);
+    fp2_add(&t5, &t5, &t6);
+    fp_neg(t5.im, t5.im);
+    fp2_mul(f2, f2, &t5);
+}
+
+static inline void Lucassequences(fp2_t *f, fp_t v0, fp_t v1)
+{
+    fp_copy(v0, fp_2);
+    fp_t tmp1;
+    fp_add(tmp1, f->re, f->re);
+    fp_copy(v1, tmp1);
+    fp_t tmp2;
+    fp_copy(tmp2, fp_2);
+    for (uint64_t i = p_even_cofactor_minus_1_highest; i > 0; i >>= 1)
+    {
+        if (i & p_even_cofactor_minus_1[p_even_cofactor_minus_1_limb])
+        {
+            fp_mul(v0, v0, v1);
+            fp_sub(v0, v0, tmp1);
+            fp_sqr(v1, v1);
+            fp_sub(v1, v1, tmp2);
+        }
+        else
+        {
+            fp_mul(v1, v1, v0);
+            fp_sub(v1, v1, tmp1);
+            fp_sqr(v0, v0);
+            fp_sub(v0, v0, tmp2);
+        }
+    }
+    for (int j = p_even_cofactor_minus_1_limb - 1; j >= 0; j--)
+    {
+        for (uint64_t i = 0x8000000000000000; i > 0; i >>= 1)
+        {
+            if (i & p_even_cofactor_minus_1[j])
+            {
+                fp_mul(v0, v0, v1);
+                fp_sub(v0, v0, tmp1);
+                fp_sqr(v1, v1);
+                fp_sub(v1, v1, tmp2);
+            }
+            else
+            {
+                fp_mul(v1, v1, v0);
+                fp_sub(v1, v1, tmp1);
+                fp_sqr(v0, v0);
+                fp_sub(v0, v0, tmp2);
+            }
+        }
+    }
+}
+
+// compute f1^{p+1}, f2^{p+1} and f3^{p+1} with the help of Lucas sequences
+void ELS(fp2_t *f1, fp2_t *f2, fp2_t *f3)
+{
+    fp_t tmp1, tmp2, tmp3, tmp4, tmp5, tmp6;
+    Lucassequences(f1, tmp1, tmp2);
+    fp_mul(tmp1, tmp1, fp_inv2);
+    fp_mul(tmp2, tmp2, fp_inv2);
+    fp_t re1;
+    fp_copy(re1, tmp2);
+    fp_mul(tmp2, tmp2, f1->re);
+    fp_sub(tmp2, tmp2, tmp1);
+    fp_sqr(f1->re, f1->re);
+    fp_sub(f1->re, f1->re, fp_1);
+    Lucassequences(f2, tmp1, tmp3);
+    fp_mul(tmp1, tmp1, fp_inv2);
+    fp_mul(tmp3, tmp3, fp_inv2);
+    fp_t re2;
+    fp_copy(re2, tmp3);
+    fp_mul(tmp3, tmp3, f2->re);
+    fp_sub(tmp3, tmp3, tmp1);
+    fp_sqr(f2->re, f2->re);
+    fp_sub(f2->re, f2->re, fp_1);
+    Lucassequences(f3, tmp1, tmp4);
+    fp_mul(tmp1, tmp1, fp_inv2);
+    fp_mul(tmp4, tmp4, fp_inv2);
+    fp_t re3;
+    fp_copy(re3, tmp4);
+    fp_mul(tmp4, tmp4, f3->re);
+    fp_sub(tmp4, tmp4, tmp1);
+    fp_sqr(f3->re, f3->re);
+    fp_sub(f3->re, f3->re, fp_1);
+    fp_mul(tmp1, f2->re, f3->re);
+    fp_mul(tmp5, f1->re, tmp1);
+    fp_copy(tmp6, f1->re);
+    fp_inv(tmp5);
+    fp_mul(f1->re, tmp5, tmp1);
+    fp_mul(tmp5, tmp5, tmp6);
+    fp_copy(tmp6, f2->re);
+    fp_mul(f2->re, tmp5, f3->re);
+    fp_mul(f3->re, tmp5, tmp6);
+    fp_mul(tmp2, tmp2, f1->re);
+    fp_mul(f1->im, f1->im, tmp2);
+    fp_mul(tmp3, tmp3, f2->re);
+    fp_mul(f2->im, f2->im, tmp3);
+    fp_mul(tmp4, tmp4, f3->re);
+    fp_mul(f3->im, f3->im, tmp4);
+    fp_copy(f1->re, re1);
+    fp_copy(f2->re, re2);
+    fp_copy(f3->re, re3);
+}
+
+// Pairing computation
+void pairing_share(fp2_t *v1, fp2_t *v2, fp2_t *v3, const jac_point_t *P, const jac_point_t *Q1, const jac_point_t *Q2, const fp2_t *WA, long f)
+{
+    jac_point_t P_J, PP_J;
+    fp2_t lam1, lam2;
+    fp2_t t1, t2, t3, t4, t5;
+    P_J.x = P->x;
+    P_J.y = P->y;
+    P_J.z = P->z;
+    fp2_t T;
+    fp2_copy(&T, WA);
+    for(int i = 0; i < f/2; i++)
+    {
+        DBL_MJ(&PP_J, &T, &lam1, &P_J);
+        DBL_MJ(&P_J, &T, &lam2, &PP_J);
+        line_fun_share(v1, v2, &PP_J, Q1, Q2, &lam1, &lam2);
+    }
+    fp2_sqr(&t1, &P_J.z);
+    fp2_mul(&t2, &t1, &Q1->x);
+    fp2_sub(&t2, &t2, &P_J.x);
+    fp2_mul(&t3, &t1, &Q2->x);
+    fp2_sub(&t3, &t3, &P_J.x);
+    fp2_copy(&P_J.x, &Q1->x);
+    fp2_copy(&P_J.y, &Q1->y);
+    fp2_copy(&P_J.z, &Q1->z);
+    fp2_copy(&T, WA);
+    for(int i = 0; i < f/2; i++)
+    {
+        DBL_MJ(&PP_J, &T, &lam1, &P_J);
+        DBL_MJ(&P_J, &T, &lam2, &PP_J);
+        line_fun(v3, &PP_J, Q2, &lam1, &lam2);
+    }
+    fp2_sqr(&t4, &P_J.z);
+    fp2_mul(&t5, &t4, &Q2->x);
+    fp2_sub(&t5, &t5, &P_J.x);
+    fp_neg(t1.im, t1.im);
+    fp_neg(t4.im, t4.im);
+    fp2_mul(&t2, &t2, &t1);
+    fp2_mul(&t5, &t5, &t4);
+    fp2_sqr(v1, v1);
+    fp2_mul(v1, v1, &t2);
+    fp2_mul(&t3, &t3, &t1);
+    fp2_sqr(v2, v2);
+    fp2_mul(v2, v2, &t3);
+    fp2_sqr(v3, v3);
+    fp2_mul(v3, v3, &t5);
+    fp2_copy(&t2, v1);
+    fp2_copy(&t2, v1);
+    fp2_copy(&t3, v1);
+    fp_neg(t2.im, t2.im);
+    fp2_mul(&t1, v1, v2);
+    fp2_mul(&t4, &t1, v3);
+    fp2_inv(&t4);
+    fp2_mul(&t5, &t1, &t4);
+    fp2_mul(&t1, &t4, v3);
+    fp2_copy(&t4, v3);
+    fp_neg(t4.im, t4.im);
+    fp2_mul(v3, &t5, &t4);
+    fp2_mul(v1, &t1, v2);
+    fp2_mul(v1, v1, &t2);
+    fp2_copy(&t2, v2);
+    fp_neg(t2.im, t2.im);
+    fp2_mul(v2, &t1, &t3);
+    fp2_mul(v2, v2, &t2);
+    ELS(v1,v2,v3);
+}
+
+
+// DLP in the small group
+void small_DLP(int *r, int *sign, fp2_t h, const fp_t *R, int row_length)
+{
+    *sign = 0;
+    fp_t one;
+    fp_mont_setone(one);
+    if(fp_is_equal(h.re, one))
+    {
+        *r = 0;
+        *sign = 1;
+    }
+    else
+    {
+        for(int i = 0; i < row_length; i++)
+        {
+            if(fp_is_equal(h.re, R[2*i]))
+            {
+                *r = i + 1;
+                if(fp_is_equal(h.im, R[2*i+1]))
+                {
+                    *sign = 1;
+                }
+                else
+                {
+                    *sign = -1;
+                }
+            }
+        }
+        assert(*sign!=0);
+    }
+}
+
+// DLP in the large group with Pohlig-Hellman algorithm
+void PH_DLP(int_two_torsion *answer, int *ans, fp2_t h, const int Str[], int w, int column_length, int row_length, long f)
+{
+    fp2_t tmp1, tmp2, tmp3;
+    fp_copy(tmp1.re, Lookupbasere);
+    fp_copy(tmp1.im, Lookupbaseim);
+    int time = column_length;
+    int modw = f%w;
+    int pw = 1;
+    for(int ii = 0; ii <w; ii++)
+    {
+        pw = pw * 2;
+    }
+    int a = 0, sign = 0;
+    struct
+    {
+        fp2_t v;
+        int i1;
+        int i2;
+    }stack[column_length];
+    int top = 0;
+    fp2_copy(&stack[top].v, &h);
+    for(int i = 0; i < modw; i++)
+    {
+        fp2_sqr(&stack[top].v, &stack[top].v);
+    }
+    stack[top].i1 = 0;
+    stack[top].i2 = 0;
+    int i = 0, j = 0, k = 0;
+    while(k != time - 1)
+    {
+        while (j + k != time - 1)
+        {
+            fp2_t ht;
+            fp2_copy(&ht, &stack[top].v);
+            j = j + Str[i];
+            for (int ii = 0; ii < Str[i] * w; ii++) {
+                fp2_sqr(&ht, &ht);
+            }
+            top++;
+            fp2_copy(&stack[top].v, &ht);
+            stack[top].i1 = j + k;
+            stack[top].i2 = Str[i];
+            i++;
+        }
+        fp2_t hc;
+        fp2_copy(&hc, &stack[top].v);
+        j = j - stack[top].i2;
+        top--;
+        a = 0, sign = 0;
+        small_DLP(&a, &sign, hc, LookuptableLR, row_length);
+        if(a != 0)
+        {
+            for(int ii = 0; ii < top + 1; ii++)
+            {
+                int coord = stack[ii].i1*pw+2*a-2;
+                fp_copy(tmp2.re, Lookuptable[coord]);
+                fp_copy(tmp2.im, Lookuptable[coord+1]);
+                if(sign == 1)
+                {
+                    fp_neg(tmp2.im, tmp2.im);
+                }
+                fp2_mul(&stack[ii].v, &stack[ii].v, &tmp2);
+            }
+        }
+        for(int ii = 0; ii < top + 1; ii++)
+        {
+            stack[ii].i1++;
+        }
+        if(sign == 1)
+        {
+            ans[k] = a;
+        }
+        else
+        {
+            ans[k] = -a;
+        }
+        k++;
+    }
+    fp2_copy(&tmp3, &stack[top].v);
+    small_DLP(&a, &sign, tmp3, LookuptableLR, row_length);
+    if(sign == 1)
+    {
+        ans[k] = a;
+    }
+    else
+    {
+        ans[k] = -a;
+    }
+    if(modw != 0)
+    {
+        fp_mont_setone(tmp3.re);
+        fp_set(tmp3.im, 0);
+        int ind = ans[0];
+        if(ind < 0)
+        {
+            ind = -ind;
+        }
+        if(ind == 0)
+        {
+            fp_mont_setone(tmp2.re);
+            fp_set(tmp2.im, 0);
+        }
+        else
+        {
+            if(ind % 2 == 0)
+            {
+                fp_mont_setone(tmp2.re);
+                fp_set(tmp2.im, 0);
+            }
+            else
+            {
+                fp_copy(tmp2.re, Lookupbasere);
+                fp_copy(tmp2.im, Lookupbaseim);
+            }
+            while(ind != 1)
+            {
+                fp2_sqr(&tmp1, &tmp1);
+                ind = ind/2;
+                if(ind%2 == 1)
+                {
+                    fp2_mul(&tmp2, &tmp1, &tmp2);
+                }
+            }
+            if(ans[0] > 0)
+            {
+                fp_neg(tmp2.im, tmp2.im);
+            }
+        }
+        for(int ii=1; ii<time; ii++)
+        {
+            if(ans[ii]!=0)
+            {
+                if(ans[ii] > 0)
+                {
+                    sign = 1;
+                }
+                else
+                {
+                    sign = -1;
+                }
+                int coord = (ii-1)*pw+2*abs(ans[ii])-2;
+                fp_copy(tmp1.re, Lookuptable[coord]);
+                fp_copy(tmp1.im, Lookuptable[coord+1]);
+                if(sign == 1)
+                {
+                    fp_neg(tmp1.im, tmp1.im);
+                }
+                fp2_mul(&tmp3, &tmp1, &tmp3);
+            }
+        }
+        for(int ii=0; ii<w-modw; ii++)
+        {
+            fp2_sqr(&tmp3, &tmp3);
+        }
+        fp2_mul(&tmp3, &tmp3, &tmp2);
+        fp2_mul(&tmp3, &tmp3, &h);
+        small_DLP(&a, &sign, tmp3, LookuptableLR, row_length);
+
+        int div = 1;
+        for(int ii = 0; ii < w - modw; ii++)
+        {
+            div = div * 2;
+        }
+        if(sign == 1)
+        {
+            ans[k+1] = a/div;
+        }
+        else
+        {
+            ans[k+1] = -a/div;
+        }
+    }
+    __int128_t x = 0;
+    __int128_t pow2_f = 1;
+    __int128_t pow2_64 = 1;
+    for(int ii = 0; ii < f; ii++)
+    {
+        pow2_f = pow2_f * 2;
+        if(ii == 63)
+        {
+            pow2_64 = pow2_f;
+        }
+    }
+    __int128_t ip = 1;
+    int modwlabel = 0;
+    if(modw != 0)
+    {
+        modwlabel = 1;
+    }
+    for(int ii = 0; ii < column_length + modwlabel; ii++)
+    {
+        x = x + ans[ii] * ip;
+        ip <<= w;
+    }
+    if(x < 0)
+    {
+        x = x + pow2_f;
+    }
+    *answer = x;
+}
+
+void ec_dlog_2_improved(digit_t* scalarP, digit_t* scalarQ, const ec_basis_t* PQ2, const ec_point_t* R, const ec_curve_t* curve)
+{ // Optimized implementation based on Montgomery formulas using Jacobian coordinates
+    int i;
+    digit_t w0 = 0, z0 = 0, x0 = 0, y0 = 0, x1 = 0, y1 = 0, w1 = 0, z1 = 0, e, e1, f, f1, f2, f2div2, f22, w, z;
+    digit_t fp2[NWORDS_ORDER] = {0}, xx[NWORDS_ORDER] = {0}, yy[NWORDS_ORDER] = {0}, ww[NWORDS_ORDER] = {0}, zz[NWORDS_ORDER] = {0};
+    digit_t f22_p[NWORDS_ORDER] = {0}, w_p[NWORDS_ORDER] = {0}, z_p[NWORDS_ORDER] = {0}, x0_p[NWORDS_ORDER] = {0}, y0_p[NWORDS_ORDER] = {0}, w0_p[NWORDS_ORDER] = {0}, z0_p[NWORDS_ORDER] = {0};
+    jac_point_t P, Q, RR, TT, R2r0, R2r, R2r1;
+    jac_point_t Pe2[POWER_OF_2], Qe2[POWER_OF_2], PQe2[POWER_OF_2];
+    ec_point_t Rnorm;    
+    ec_curve_t curvenorm;
+    ec_basis_t PQ2norm;
+
+    f = POWER_OF_2;
+    memset(scalarP, 0, NWORDS_ORDER*RADIX/8);
+    memset(scalarQ, 0, NWORDS_ORDER*RADIX/8);
+
+    // Normalize R,PQ2,curve
+    fp2_t D;
+    fp2_mul(&D, &PQ2->P.z, &PQ2->Q.z);
+    fp2_mul(&D, &D, &PQ2->PmQ.z);
+    fp2_mul(&D, &D, &R->z);
+    fp2_mul(&D, &D, &curve->C);
+    fp2_inv(&D);
+    fp_mont_setone(Rnorm.z.re);
+    fp_set(Rnorm.z.im, 0);
+    fp2_copy(&PQ2norm.P.z, &Rnorm.z);
+    fp2_copy(&PQ2norm.Q.z, &Rnorm.z);
+    fp2_copy(&PQ2norm.PmQ.z, &Rnorm.z);
+    fp2_copy(&curvenorm.C, &Rnorm.z);
+    fp2_mul(&Rnorm.x, &R->x, &D);
+    fp2_mul(&Rnorm.x, &Rnorm.x, &PQ2->P.z);
+    fp2_mul(&Rnorm.x, &Rnorm.x, &PQ2->Q.z);
+    fp2_mul(&Rnorm.x, &Rnorm.x, &PQ2->PmQ.z);
+    fp2_mul(&Rnorm.x, &Rnorm.x, &curve->C);
+    fp2_mul(&PQ2norm.P.x, &PQ2->P.x, &D);
+    fp2_mul(&PQ2norm.P.x, &PQ2norm.P.x, &R->z);
+    fp2_mul(&PQ2norm.P.x, &PQ2norm.P.x, &PQ2->Q.z);
+    fp2_mul(&PQ2norm.P.x, &PQ2norm.P.x, &PQ2->PmQ.z);
+    fp2_mul(&PQ2norm.P.x, &PQ2norm.P.x, &curve->C);
+    fp2_mul(&PQ2norm.Q.x, &PQ2->Q.x, &D);
+    fp2_mul(&PQ2norm.Q.x, &PQ2norm.Q.x, &R->z);
+    fp2_mul(&PQ2norm.Q.x, &PQ2norm.Q.x, &PQ2->P.z);
+    fp2_mul(&PQ2norm.Q.x, &PQ2norm.Q.x, &PQ2->PmQ.z);
+    fp2_mul(&PQ2norm.Q.x, &PQ2norm.Q.x, &curve->C);
+    fp2_mul(&PQ2norm.PmQ.x, &PQ2->PmQ.x, &D);
+    fp2_mul(&PQ2norm.PmQ.x, &PQ2norm.PmQ.x, &R->z);
+    fp2_mul(&PQ2norm.PmQ.x, &PQ2norm.PmQ.x, &PQ2->P.z);
+    fp2_mul(&PQ2norm.PmQ.x, &PQ2norm.PmQ.x, &PQ2->Q.z);
+    fp2_mul(&PQ2norm.PmQ.x, &PQ2norm.PmQ.x, &curve->C);
+    fp2_mul(&curvenorm.A, &curve->A, &D);
+    fp2_mul(&curvenorm.A, &curvenorm.A, &R->z);
+    fp2_mul(&curvenorm.A, &curvenorm.A, &PQ2->P.z);
+    fp2_mul(&curvenorm.A, &curvenorm.A, &PQ2->Q.z);
+    fp2_mul(&curvenorm.A, &curvenorm.A, &PQ2->PmQ.z);
+
+    recover_y(&P.y, &PQ2norm.P.x, &curvenorm);
+    fp2_copy(&P.x, &PQ2norm.P.x);
+    fp2_copy(&P.z, &PQ2norm.P.z);
+    recover_y(&Q.y, &PQ2norm.Q.x, &curvenorm);   // TODO: THIS SECOND SQRT CAN BE ELIMINATED
+    fp2_copy(&Q.x, &PQ2norm.Q.x);
+    fp2_copy(&Q.z, &PQ2norm.Q.z);
+    recover_y(&RR.y, &Rnorm.x, &curvenorm);
+    fp2_copy(&RR.x, &Rnorm.x);
+    fp2_copy(&RR.z, &Rnorm.z);
+    
+    jac_neg(&TT, &Q);
+    ADD(&TT, &P, &TT, &curvenorm);
+    if (!is_jac_xz_equal(&TT, &PQ2norm.PmQ))
+        jac_neg(&Q, &Q);    
+    
+    fp2_t v1, v2, v3;
+    fp_mont_setone(v1.re);
+    fp_set(v1.im,0);
+    fp_mont_setone(v2.re);
+    fp_set(v2.im,0);
+    fp_mont_setone(v3.re);
+    fp_set(v3.im,0);
+    
+    fp2_t tmpA;
+    jac_point_t tmpP, tmpQ, tmpRR;
+    fp2_copy(&tmpP.x, &P.x);
+    fp2_copy(&tmpP.y, &P.y);
+    fp2_copy(&tmpP.z, &P.z);
+    fp2_copy(&tmpQ.x, &Q.x);
+    fp2_copy(&tmpQ.y, &Q.y);
+    fp2_copy(&tmpQ.z, &Q.z);
+    fp2_copy(&tmpRR.x, &RR.x);
+    fp2_copy(&tmpRR.y, &RR.y);
+    fp2_copy(&tmpRR.z, &RR.z);
+    fp2_copy(&tmpA, &curvenorm.A);
+    fp_mul(tmpA.re, tmpA.re, fp_inv3);
+    fp_mul(tmpA.im, tmpA.im, fp_inv3);
+    fp2_add(&tmpP.x, &tmpP.x, &tmpA);
+    fp2_add(&tmpQ.x, &tmpQ.x, &tmpA);
+    fp2_add(&tmpRR.x, &tmpRR.x, &tmpA);
+    fp2_mul(&tmpA, &tmpA, &curvenorm.A);
+    fp_sub(tmpA.re, fp_1, tmpA.re);
+    fp_neg(tmpA.im, tmpA.im);
+
+    // Pairing computation
+    fp2_t tmpm;
+    fp2_t tmpv;
+    pairing_share(&v1,&v2,&v3,&tmpP,&tmpQ,&tmpRR,&tmpA,f);
+
+    // Discrete logarithms over finite fields
+    int win = 5;
+    int column_length = f/win;
+    int row_length = 1;
+    for(int ii = 0; ii < win - 1; ii++)
+    {
+        row_length = row_length * 2;
+    }
+    int ans[column_length];
+
+    int_two_torsion is1, is2, is3;
+    PH_DLP(&is2, ans, v2, strategy, win, column_length, row_length,f);
+    int2t_neg(&is2, is2);
+    PH_DLP(&is3, ans, v3, strategy, win, column_length, row_length,f);
+    PH_DLP(&is1, ans, v1, strategy, win, column_length, row_length,f);
+    int2t_inv(&is1, is1);
+    int2t_mul(&is2, is1, is2);
+    int2t_mul(&is3, is1, is3);
+
+    int2t_toarray(scalarQ, is2);
+    int2t_toarray(scalarP, is3);
+
+    fp_copy(fp2, TWOpFm1);   // 2^(f-1)
+    // If scalarP > 2^(f-1) or (scalarQ > 2^(f-1) and (scalarP = 0 or scalarP = 2^(f-1))) then output -scalarP mod 2^f, -scalarQ mod 2^f
+    if (mp_compare(scalarP, fp2, NWORDS_ORDER) == 1 ||
+        (mp_compare(scalarQ, fp2, NWORDS_ORDER) == 1 && (mp_is_zero(scalarP, NWORDS_ORDER) == 1 || mp_compare(scalarP, fp2, NWORDS_ORDER) == 0))) {
+        mp_shiftl(fp2, 1, NWORDS_ORDER);       // Get 2^f
+        if (mp_is_zero(scalarP, NWORDS_ORDER) != 1)
+            mp_sub(scalarP, fp2, scalarP, NWORDS_ORDER);
+        if (mp_is_zero(scalarQ, NWORDS_ORDER) != 1)
+            mp_sub(scalarQ, fp2, scalarQ, NWORDS_ORDER);
+    }
+}
+
 static void ec_dlog_3_step(digit_t* x, digit_t* y, const jac_point_t* R, const int f, const int B, const jac_point_t* Pe3, const jac_point_t* Qe3, const jac_point_t* PQe3, const ec_curve_t* curve)
 { // Based on Montgomery formulas using Jacobian coordinates
     int i, j;

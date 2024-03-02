@@ -105,6 +105,17 @@ int protocols_keygen(public_key_t *pk, secret_key_t *sk);
 
 
 /**
+ * @brief Computing a key pair
+ *
+ * @param pk : Output the public key 
+ * @param sk : Output the secret key
+ * @param final_beta : An endomorphism of the image curve
+ * @param final_action_matrix : the action matrix of final_beta
+ * @returns a bit indicating if the computation succeeded  
+    */
+int protocols_keygen_modified(quat_alg_elem_t *final_beta, ibz_t *final_n_beta, ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, ibz_t *final_n, public_key_t *pk, secret_key_t *sk);
+
+/**
  * @brief Computing a commitment isogeny from the starting curve
  *
  * @param ideal Output: the left O0-ideal defining the commitment isogeny
@@ -154,6 +165,8 @@ void protocols_challenge(quat_left_ideal_t *ideal, signature_t *sig, const ec_cu
  * @returns a bit indicating if the computation succeeded  
     */
 int protocols_sign(signature_t *sig,const public_key_t *pk, const secret_key_t *sk,const unsigned char* m, size_t l);
+
+int protocols_sign_modified(signature_t *sig,const public_key_t *pk, const secret_key_t *sk, const unsigned char* m, size_t l, quat_alg_elem_t *final_beta, ibz_t *final_n_beta, ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, ibz_t *final_n);
 
 
 /** @}

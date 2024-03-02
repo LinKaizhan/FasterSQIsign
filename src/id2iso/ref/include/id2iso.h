@@ -92,6 +92,55 @@ void id2iso_compressed_long_two_isog_finalize(id2iso_compressed_long_two_isog_t 
  */
 int id2iso_ideal_to_isogeny_two_long_power_of_2(id2iso_compressed_long_two_isog_t *isog_zip, ec_curve_t *domain, ec_basis_t *basis_minus, ec_basis_t *basis_plus, ec_point_t *kernel_dual, const quat_alg_elem_t *gen_input, const int length, const quat_left_ideal_t *lideal_start_small, const quat_left_ideal_t *lideal_start_two, const quat_alg_elem_t *gen_two, const quat_alg_t *Bpoo);
 
+
+/**
+ * @brief Precomputation for signing. This procedure was done in keygen.
+ *
+ * @param final_beta： endomorphism of the codomain of the output isogeny
+ * @param final_n_beta: norm of final_beta 
+ * @param final_action_matrix: action matrix of final_beta
+ * @param domain : codomain of the output isogeny
+ * @param basis_minus : odd torsion basis pushed through the output isogeny
+ * @param basis_plus : odd torsion basis pushed through the output isogeny
+ * @param kernel_dual : kernel of the dual of the last step of the secret isogeny
+ * @param lideal_start_small : a small ideal equivalent to lideal_start_two of right order equal to O
+ * @param lideal_start_two : O0-ideal of norm a power of 2 equivalent to lideal_start_small, corresponding to an isogeny isog_start_two
+ * @param gen_two element of O0, generator of lideal_start_two
+ * @param Bpoo : the quaternion algebra
+ */
+int precompute_for_sign(quat_alg_elem_t *final_beta, ibz_t *final_n_beta, ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, ibz_t *final_n, ec_curve_t *domain, ec_basis_t *basis_minus, ec_basis_t *basis_plus, ec_point_t *kernel_dual, const quat_left_ideal_t *lideal_start_small, const quat_left_ideal_t *lideal_start_two, const quat_alg_elem_t *gen_two, const quat_alg_t *Bpoo);
+
+
+/**
+ * @brief Translating an ideal of norm a big power of 2 into the corresponding isogeny with the help of the precomptuation in keygen
+ *
+ * @param isog_zip Output : compression of the output isogeny  
+ * @param basis_minus : odd torsion basis (in the end, this will be the basis pushed through the output isogeny)
+ * @param basis_plus : odd torsion basis (in the end, this will be the basis pushed through the output isogeny)
+ * @param domain : the starting curve (in the end, this will be the codomain of the output isogeny)
+ * @param kernel_dual : the dual of the kernel of the last step of isog_start_two (in the end this will be the kernel of the dual of the last step of the output isogeny) 
+ * @param gen_input : quaternion element, element of a maximal order O, generator of the O-ideal to be translated 
+ * @param length : the length of the chain to be translated
+ * @param lideal_start_small : a small ideal equivalent to lideal_start_two of right order equal to O
+ * @param lideal_start_two : O0-ideal of norm a power of 2 equivalent to lideal_start_small, corresponding to an isogeny isog_start_two
+ * @param gen_two element of O0, generator of lideal_start_two
+ * @param Bpoo : the quaternion algebra
+ * @param final_beta： endomorphism of the codomain of the output isogeny
+ * @param final_n_beta: norm of final_beta 
+ * @param final_action_matrix: action matrix of final_beta
+ * @returns a bit indicating if the computation succeeded
+ *  /!\ the composition of isog_start_two and isog might be backtracking
+ * lideal_start_two = O0 < gen_two , 2^*> 
+ * lideal_start_small = O0 < conj(gen_two), * >
+ * lideal_start_small = lideal_lideal_start_two * conj(gen_two) / 2^*  
+ * The ideal to be translated is equal to O < gen_input, 2^e> where O = OR(lideal_start_small)  
+ * 
+ * assumes that the ideal given in input has exactly norm 2^e where e = length * f (where f = TORSION_PLUS_EVEN_POWER)
+ * when used for compressing an isogeny, we assume that the curve given in input is normalized
+ */
+int id2iso_ideal_to_isogeny_two_long_power_of_2_modified_sign(id2iso_compressed_long_two_isog_t *isog_zip, ec_curve_t *domain, ec_basis_t *basis_minus, ec_basis_t *basis_plus, ec_point_t *kernel_dual, const quat_alg_elem_t *gen_input, const int length, const quat_left_ideal_t *lideal_start_small, const quat_left_ideal_t *lideal_start_two, const quat_alg_elem_t *gen_two, const quat_alg_t *Bpoo, quat_alg_elem_t *final_beta, ibz_t *final_n_beta, ibz_mat_2x2_t *final_action_matrix, quat_alg_elem_t *final_gen, ibz_t *final_n);
+
+
 /**
  * @brief Translating an ideal of odd norm dividing p²-1 into the corresponding isogeny
  *
@@ -105,7 +154,6 @@ int id2iso_ideal_to_isogeny_two_long_power_of_2(id2iso_compressed_long_two_isog_
  * the coefficients extracted from the ideal are to be applied to basis_minus and basis_plus to compute the kernel of the isogeny. 
  *
  */
-
 void id2iso_ideal_to_isogeny_odd(ec_isog_odd_t *isog, const ec_curve_t *domain, const ec_basis_t *basis_plus,const ec_basis_t *basis_minus, const quat_left_ideal_t *lideal_input);
 
 /**

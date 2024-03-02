@@ -176,6 +176,69 @@ void ec_eval_odd(ec_curve_t* image, const ec_isog_odd_t* phi,
     A24_to_AC(image, &A24);
 }
 
+void ec_eval_odd_improved(ec_curve_t* image, const ec_isog_odd_t* phi,
+        ec_point_t* points, unsigned short length){
+        
+    ec_point_t ker_plus, ker_minus, P, K, A24, B24;
+    int i,j,k;
+
+    AC_to_A24(&A24, &phi->curve);
+
+    // Isogenies with kernel in E[p+1]
+    copy_point(&ker_plus, &phi->ker_plus);
+    copy_point(&ker_minus, &phi->ker_minus);
+    for(i = 0; i < P_LEN; i++){
+        copy_point(&P, &ker_plus);
+        for(j = i+1; j < P_LEN; j++){
+            for(k = 0; k < phi->degree[j]; k++)
+                xMULv2(&P, &P, &(TORSION_ODD_PRIMES[j]), p_plus_minus_bitlength[j], &A24);
+        }
+        for(k = 0; k < phi->degree[i]; k++){
+            copy_point(&K, &P);
+            for(j = 0; j < phi->degree[i]-k-1; j++)
+                xMULv2(&K, &K, &(TORSION_ODD_PRIMES[i]), p_plus_minus_bitlength[i], &A24);
+            kps(i, K, A24);
+            xeval(&P, i, P, A24);
+            xeval(&ker_plus, i, ker_plus, A24);
+            xeval(&ker_minus, i, ker_minus, A24);
+            for(j = 0; j < length; j++)
+                xeval(&points[j], i, points[j], A24);
+            if(i > 0){
+                xisog_improved(&B24, points);
+            }
+            else
+                xisog(&B24, i, A24);
+            copy_point(&A24, &B24);
+            kps_clear(i);
+        }
+    }
+
+    // Isogenies with kernel in E[p-1]
+    for(i = P_LEN; i < P_LEN+M_LEN; i++){
+        copy_point(&P, &ker_minus);
+        for(j = i+1; j < P_LEN+M_LEN; j++){
+            for(k = 0; k < phi->degree[j]; k++)
+                xMULv2(&P, &P, &(TORSION_ODD_PRIMES[j]), p_plus_minus_bitlength[j], &A24);
+        }
+        for(k = 0; k < phi->degree[i]; k++){
+            copy_point(&K, &P);
+            for(j = 0; j < phi->degree[i]-k-1; j++)
+                xMULv2(&K, &K, &(TORSION_ODD_PRIMES[i]), p_plus_minus_bitlength[i], &A24);
+            kps(i, K, A24);
+            xeval(&P, i, P, A24);
+            xeval(&ker_minus, i, ker_minus, A24);
+            for(j = 0; j < length; j++)
+                xeval(&points[j], i, points[j], A24);
+            xisog_improved(&B24, points);
+            copy_point(&A24, &B24);
+            kps_clear(i);
+        }
+    }
+
+    A24_to_AC(image, &A24);
+}
+
+
 void ec_curve_normalize(ec_curve_t *new, ec_isom_t *isom, const ec_curve_t *old){
     fp2_t t0, t1, t2, t3, t4, t5;
     // Compute the other solutions:

@@ -25,3 +25,7 @@ FOREACH(SVARIANT ${SVARIANT_S})
     set_tests_properties(sqisign_${SVARIANT}_KAT PROPERTIES TIMEOUT 0)
 ENDFOREACH()
 
+
+if(PRECOMPUTED)
+    add_definitions(-DPRECOMPUTED)
+endif()
